@@ -26,6 +26,7 @@ def _remove(p):
 
 
 def _lock(folder, say=None):   # without say, it does not wait: False while another process holds the lock
+    if os.name == 'nt': return True
     parent = str(Path(folder).parent)
     if parent in _locks or not os.path.isdir(parent): return True
     fd = os.open(parent, os.O_RDONLY)

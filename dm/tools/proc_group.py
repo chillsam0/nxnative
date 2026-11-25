@@ -27,6 +27,7 @@ if _libproc is not None:
 
 def members(pgid):
     """[(pid, name)] of the live processes in process group pgid; zombies are not members (they write nothing; the caller or launchd reaps them)"""
+    if os.name == 'nt': return []
     if _libproc is None:   # another system: only whether the group has a member, no names
         try: os.killpg(pgid, 0); return [(pgid, '?')]
         except ProcessLookupError: return []
@@ -51,7 +52,11 @@ class Group:
     def __init__(self, cmd, grace=None, drain=None, **popen):   # grace, drain: GRACE and DRAIN when None
         self.grace, self.drain = GRACE if grace is None else grace, DRAIN if drain is None else drain
         self.paused, self.stragglers, self.done = False, [], False
-        self.p = subprocess.Popen([str(c) for c in cmd], start_new_session=True, **popen)
+        if os.name == 'nt':
+            popen.setdefault('creationflags', subprocess.CREATE_NEW_PROCESS_GROUP)
+            self.p = subprocess.Popen([str(c) for c in cmd], **popen)
+        else:
+            self.p = subprocess.Popen([str(c) for c in cmd], start_new_session=True, **popen)
         self.pgid = self.p.pid
 
     def __enter__(self): return self
@@ -65,15 +70,25 @@ class Group:
         return False
 
     def _signal(self, sig):
+        if os.name == 'nt':
+            if self.p.poll() is None:
+                try: subprocess.run(['taskkill', '/PID', str(self.p.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                except OSError: self.p.kill()
+            return
         if self.p.returncode is not None and not members(self.pgid): return   # its leader reaped and its members gone: the number may be another group's now
         try: os.killpg(self.pgid, sig)
         except (ProcessLookupError, PermissionError): pass   # every member gone, or only zombies left (macOS answers EPERM for those)
 
-    def pause(self): self._signal(signal.SIGSTOP); self.paused = True
+    def pause(self):
+        if os.name != 'nt': self._signal(signal.SIGSTOP); self.paused = True
 
-    def resume(self): self._signal(signal.SIGCONT); self.paused = False
+    def resume(self):
+        if os.name != 'nt': self._signal(signal.SIGCONT); self.paused = False
 
     def _gone(self, secs):   # waits up to secs for the group to end (reaping the direct child on the way); → whether it did
+        if os.name == 'nt':
+            try: self.p.wait(timeout=secs); return True
+            except subprocess.TimeoutExpired: return False
         end = time.monotonic() + secs
         while True:
             self.p.poll()
@@ -85,6 +100,11 @@ class Group:
         """sig to the group (resumed first: a stopped process acts on no signal but SIGKILL), up to grace seconds, then SIGKILL; returns once the direct child is reaped and
         no member is left, or REAP seconds after the SIGKILL (a member stuck in the kernel). Re-raises the last interrupt (or SIGTERM, exit) that came while it waited"""
         late, self.done = None, True
+        if os.name == 'nt':
+            self._signal(sig)
+            try: self.p.wait(timeout=self.grace)
+            except subprocess.TimeoutExpired: self.p.kill(); self.p.wait()
+            return
         try:
             self.resume(); self._signal(sig)
             if self._gone(self.grace): self.p.wait(); return
@@ -108,6 +128,18 @@ class Group:
         The direct child's exit is seen whether or not output comes; finish() then waits for the rest of the group"""
         out = self.p.stdout
         assert out is not None, 'lines() reads a group started with stdout=PIPE'
+        if os.name == 'nt':
+            dec = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder(locale.getpreferredencoding(False))(errors='replace'), translate=True)
+            buf = ''
+            while True:
+                data = out.read(65536) if hasattr(out, 'read1') else os.read(out.fileno(), 65536)
+                if not data: break
+                buf += dec.decode(data)
+                *done, buf = buf.split('\n')
+                for line in done: yield line + '\n'
+            buf += dec.decode(b'', final=True)
+            if buf: yield buf
+            return
         fd = out.fileno()
         dec = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder(locale.getpreferredencoding(False))(errors='replace'), translate=True)
         sel, buf, end, stopped = selectors.DefaultSelector(), '', None, False

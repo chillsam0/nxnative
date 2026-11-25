@@ -9,6 +9,7 @@
 import os, re, sys, runpy, subprocess
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE); import dmsh_chain, tool_lock
 OWN = re.compile(r'(metal_macosx|metal_iphoneos): lock (.*) / actual (?!missing$)(.*)')   # a missing compiler still stops the build
+WIN_OWN = re.compile(r'(dmsh_xlate|spirv-cross|metal_macosx|metal_iphoneos): lock (.*) / actual (?!missing$)(.*)')   # Windows native builds of the locked tools (xlate_source is still verified strictly)
 ALLOW = 'DM_ALLOW_OTHER_METAL'
 XCODE_VERSION = '27.2'   # the Xcode whose Metal compiler dmsh_chain.lock records; README.md names it too
 XCODE = f'Xcode {XCODE_VERSION} (macOS 26.6 or later)'
@@ -56,14 +57,15 @@ def ios_target():   # as dmsh_build.py picks its targets: a Mac-only build (the 
 
 def check_tools():
     bad, own = [], []
+    pat = WIN_OWN if os.name == 'nt' else OWN
     for b in strict():
-        m = OWN.fullmatch(b)
+        m = pat.fullmatch(b)
         if m: own.append((m[1], m[2], m[3]))   # (lock key, tested, actual)
         elif not (b.startswith('metal_iphoneos: ') and b.endswith(' / actual missing') and not ios_target()): bad.append(b)   # a Mac without the iOS platform
     if bad: return bad
-    metal = own
+    metal = [x for x in own if x[0].startswith('metal_')]
     if metal and not allowed(): sys.exit(other_metal_message(metal))
-    if own: print('note: built with this Mac\'s compilers, not the ones the shaders were tested with (dmsh_chain.lock): ' +
+    if own: print('note: built with this machine\'s compilers, not the ones the shaders were tested with (dmsh_chain.lock): ' +
                   '; '.join(f'{k} {now} (tested: {want})' for k, want, now in own) + (f' ({ALLOW}=1)' if metal else ''), flush=True)
     return []
 

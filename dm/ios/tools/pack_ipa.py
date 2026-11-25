@@ -26,6 +26,7 @@ BIG = 256 << 20      # files above this are streamed by the writer; smaller ones
 WINDOW = 2 << 30     # input bytes in the pool at once
 QUEUE = 4096         # entries in the pool at once (folders of tiny files)
 CHUNK = 16 << 20
+EXEC = set()   # --exec: archive paths that get mode 755 when packing on Windows (the app's executable)
 L32, L16 = 0xFFFFFFFF, 0xFFFF
 DIR_MODE = stat.S_IFDIR | 0o755   # a parent folder no source folder stands for (Payload/, msl/); its time is 1980-01-01, so it is the same in every pack
 Entry = collections.namedtuple('Entry', 'name path st root')   # st None: a synthetic parent; root: the mapping's source folder
@@ -122,6 +123,8 @@ class Zip:
         z = [v for v in (usize, csize, off) if v >= L32]   # zip64 extra: the fields that do not fit, in this order
         ext = struct.pack(f'<HH{len(z)}Q', 1, 8 * len(z), *z) if z else b''
         mode = e.st.st_mode if e.st else DIR_MODE
+        if os.name == 'nt' and e.st:   # Windows has no Unix modes (files read as 0o666 without x): folders 755, --exec files 755, everything else 644
+            mode = DIR_MODE if stat.S_ISDIR(mode) else stat.S_IFREG | (0o755 if e.name in EXEC else 0o644)
         self.cd.append(struct.pack('<IHHHHHHIIIHHHHHII', 0x02014B50, 0x031E, 45 if z else 20 if method == 8 else 10, fl, method, t, d, crc, min(csize, L32), min(usize, L32),
                                    len(nb), len(ext), 0, 0, 0, (mode << 16) | (0x10 if stat.S_ISDIR(mode) else 0), min(off, L32)) + nb + ext)
         self.stats['deflated' if method == 8 else 'stored'] += usize
@@ -264,7 +267,9 @@ def main():
     ap.add_argument('--skip-suffix', action='append', default=[], help='files whose names end so are left out of every folder walk')
     ap.add_argument('--no-reuse', action='store_true', help='pack every file again, without copying from the old IPA')
     ap.add_argument('--shader-files', action='store_true', help='an NVN game\'s shader library goes in as its separate files, not as one image, for install tools that cannot copy a large file (AltServer)')
+    ap.add_argument('--exec', action='append', default=[], help='archive paths marked executable (0755) when packing on Windows')
     a = ap.parse_args()
+    EXEC.clear(); EXEC.update(p.strip('/') for p in a.exec)
     maps = []
     for m in a.maps:
         arc, sep, src = m.partition('=')

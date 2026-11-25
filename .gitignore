@@ -11,3 +11,9 @@ dm/games/*/cb_extent.tsv
 .coverage
 .coverage.*
 /coverage.json
+# Windows port local build outputs, extracted SDK, and workspace agent skills
+.agents/
+win/build/
+win/sdk/out/
+win/toolchain.json
+win/gui_settings.json

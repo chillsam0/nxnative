@@ -118,7 +118,7 @@ def reuse_descriptors(roots):
 
 
 def _resolve(path):
-    p = _os.path.abspath(_os.fsdecode(path))
+    p = _os.path.abspath(_os.fsdecode(path)).replace('\\', '/')
     parts = p.split('/')
     for i, part in enumerate(parts):
         if not part.endswith('.img'): continue

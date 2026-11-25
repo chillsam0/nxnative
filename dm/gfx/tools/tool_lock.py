@@ -10,9 +10,18 @@ from dmsh_chain import LOCK, XLATE_DIR, SPIRV_CROSS, xlate_source_sha
 
 def sha16(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()[:16]
 
+def xlate_path():
+    p = os.path.join(XLATE_DIR, 'dmsh_xlate')
+    if os.path.isfile(p): return p
+    if os.name == 'nt':
+        if os.path.isfile(p + '.exe'): return p + '.exe'
+        win_xl = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../../win/build/tools/dmsh_xlate/dmsh_xlate.exe'))
+        if os.path.isfile(win_xl): return win_xl
+    return p
+
 def tools_now(check_metal=True):
     """Actual tool fingerprints: the translator (a native executable that holds the Ryujinx shader library), spirv-cross, metal compiler (macOS / iOS)"""
-    xl = os.path.join(XLATE_DIR, 'dmsh_xlate')
+    xl = xlate_path()
     t: dict = {'dmsh_xlate': sha16(xl) if os.path.isfile(xl) else 'missing'}
     t['xlate_source'] = xlate_embedded()
     sc = shutil.which(SPIRV_CROSS)
@@ -26,7 +35,7 @@ NO_RUN = 'does not run'
 def xlate_embedded():
     """The source digest the translator embeds (dmsh_xlate --source-sha), or 'does not run (<its first error line>)', so a translator that cannot start (missing, not executable, a download
     quarantined by macOS) is named as such rather than read as an empty digest and a stale translator"""
-    try: r = subprocess.run([os.path.join(XLATE_DIR, 'dmsh_xlate'), '--source-sha'], capture_output=True, text=True, errors='replace', timeout=60)
+    try: r = subprocess.run([xlate_path(), '--source-sha'], capture_output=True, text=True, errors='replace', timeout=60)
     except (OSError, subprocess.SubprocessError) as e: return f'{NO_RUN} ({e})'
     if r.returncode == 0 and r.stdout.strip(): return r.stdout.strip()
     return '%s (%s)' % (NO_RUN, (r.stderr.strip().splitlines() or r.stdout.strip().splitlines() or [f'exit code {r.returncode}'])[0])

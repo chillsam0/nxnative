@@ -1,5 +1,10 @@
 # nxnative
 
+> **Windows & Linux fork (no Mac or Xcode required):** Build unsigned iOS IPAs from your Nintendo Switch / Switch 2 game dumps directly on Windows 10/11 (GUI via [Build-IPA-GUI.bat](Build-IPA-GUI.bat) or CLI via `win/build_ipa_windows.py`) or Linux.
+> - **Getting started (step-by-step):** [win/TUTORIAL.md](win/TUTORIAL.md)
+> - **Technical overview & prerequisites:** [win/README.md](win/README.md)
+> - **Linux guide:** [win/LINUX.md](win/LINUX.md)
+
 Play your own Nintendo Switch and Switch 2 games natively on Apple silicon Macs, iPhone and iPad. One script packs your game into a Mac app or an unsigned IPA that you sideload.
 
 It is not an emulator: the game's own code runs directly on the Apple chip, with Switch graphics rebuilt on Metal. Nothing from any game is in this repository, and the project is not affiliated with Nintendo or any game publisher.
