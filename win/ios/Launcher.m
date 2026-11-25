@@ -556,13 +556,13 @@ static UIImage *app_icon(void) {
     if (self.checkingSync) return;
     dm_cloud_saves_env();
     const char *save = getenv("DM_SAVE"), *syncDir = getenv("DM_SAVE_SYNC"), *title = dm_save_title();
-    if (!save || !*save || !syncDir || !*syncDir || !title || !*title) { [self startWithChoice:nil]; return; }
+    if (!save || !*save || !syncDir || !*syncDir || !strcmp(syncDir, "0") || !title || !*title) { [self startWithChoice:nil]; return; }
     self.checkingSync = YES;
     self.playButton.enabled = NO;
-    NSString *saveStr = @(save), *titleStr = @(title);
+    NSString *saveStr = @(save), *syncStr = @(syncDir), *titleStr = @(title);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         char buf[1024] = "";
-        int rc = save_sync_report(saveStr.UTF8String, titleStr.UTF8String, NULL, 60000, buf, sizeof buf);
+        int rc = save_sync_report(saveStr.UTF8String, titleStr.UTF8String, syncStr.UTF8String, 60000, buf, sizeof buf);
         NSString *line = rc == 0 ? @(buf) : nil;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.checkingSync = NO;

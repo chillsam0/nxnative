@@ -80,6 +80,7 @@ class HostSources(unittest.TestCase):
         self.assertIn('main.c', names)
         self.assertIn('entry.S', names)
         self.assertIn('save_sync.c', names)
+        self.assertIn('save_sync_apple.m', names)
         self.assertNotIn('front_mac.m', names)
         self.assertNotIn('audio_input_mac.m', names)
         self.assertTrue(any(f.parent.name == 'nvn' for f in files))
@@ -149,6 +150,20 @@ class PackIpa(unittest.TestCase):
                 modes = {i.filename: i.external_attr >> 16 for i in z.infolist()}
             self.assertEqual(modes['Payload/DmIOS.app/DmIOS'] & 0o777, 0o755)
             self.assertEqual(modes['Payload/DmIOS.app/Info.plist'] & 0o777, 0o644 if os.name == 'nt' else modes['Payload/DmIOS.app/Info.plist'] & 0o777)
+
+
+class ProcGroupWin(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows proc_group stop_all guard')
+    def test_stop_all_on_windows(self):
+        sys.path.insert(0, str(REPO / 'dm/tools'))
+        import proc_group
+        g = proc_group.Group([sys.executable, '-c', 'import time; time.sleep(30)'], grace=1.0)
+        try:
+            proc_group.stop_all([g])
+            self.assertTrue(g.done)
+            self.assertIsNotNone(g.p.poll())
+        finally:
+            if g.p.poll() is None: g.p.kill(); g.p.wait()
 
 
 if __name__ == '__main__':

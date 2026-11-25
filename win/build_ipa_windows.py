@@ -162,7 +162,7 @@ def main():
 
     CAP = {'glslc': ('glslc_capture', 'DM_GLSLC_CAPTURE', 'nvn'), 'vk': ('vk_capture', 'DM_VK_CAPTURE', 'vulkan'), 'gl': ('gl_capture', 'DM_GL_CAPTURE', 'gl')}
 
-    def device_capture(kind, d, patched, work, env, g, want, done_fn):
+    def device_capture(kind, d, patched, work, env, g, want, done_fn, msl=None, aoc=None):
         name, var, gfx = CAP[kind]
         up.PROG.stage(f'{name.replace("_", " ")} (from the device)')
         nsp = work.parent
@@ -185,7 +185,7 @@ def main():
         nacp = d / 'control.nacp'
         try: gname = subprocess.run([sys.executable, str(REPO / 'dm/tools/nacp.py'), str(nacp)], capture_output=True, text=True).stdout.strip() if nacp.exists() else ''
         except OSError: gname = ''
-        cenv = dict(env, GAME=g.id, W=str(work / 'ipa_capture'), PATCHED=str(patched), ROMFS=str(up.rfs.source(d)), AOC='', GFXAPI=gfx, DM_ENV_FILE=str(envf), NXW_CAPTURE_IPA='1',
+        cenv = dict(env, GAME=g.id, W=str(work / 'ipa_capture'), PATCHED=str(patched), ROMFS=str(up.rfs.source(d)), AOC=str(aoc or ''), GFXAPI='nvn' if msl else gfx, DM_ENV_FILE=str(envf), NXW_CAPTURE_IPA='1',
                     DM_DISPLAY_NAME=f'{gname or stem} (capture)', DM_SHOW_FPS='NO')
         up.PROG.set(step='packing the capture IPA')
         up.run([sys.executable, str(WIN / 'build_app.py'), str(out)], work / 'logs' / 'capture_ipa.log', env=cenv)
@@ -206,15 +206,16 @@ def main():
     up.UE_DECODE_SECS = up.UE_DECODE_SECS * 20
 
     import love_shaders
-    def capture_shaders(repo, d, patched, work, env, logs, g, api):
-        if api != 'gl': return device_capture(api, d, patched, work, env, g, up.capture_wanted(g, api), lambda c: up.capture_done(c, api))
+    def capture_shaders(repo, d, patched, work, env, logs, g, api, msl=None, aoc=None):
+        if api != 'gl' or msl is not None:
+            return device_capture(api, d, patched, work, env, g, up.capture_wanted(g, api), lambda c: up.capture_done(c, api), msl=msl, aoc=aoc)
         out, part = d / 'gl_capture', d / 'gl_capture.partial'
         up.PROG.stage('GL shader reconstruction (LÖVE)')
         up.rmtree(part)
         try: table = g.table(up.CAPTURES['gl']['table'])
         except Exception: table = None
         r = love_shaders.generate(d / 'ExeFS/main', up.rfs.source(d), part, table, log=up.say)
-        if r is None: return device_capture('gl', d, patched, work, env, g, up.capture_wanted(g, 'gl'), lambda c: up.capture_done(c, 'gl'))
+        if r is None: return device_capture('gl', d, patched, work, env, g, up.capture_wanted(g, 'gl'), lambda c: up.capture_done(c, 'gl'), aoc=aoc)
         up.rmtree(out); part.rename(out)
         up.PROG.end(f'{len(r[0])} shaders')
         return out

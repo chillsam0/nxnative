@@ -358,6 +358,9 @@ def check_program(gm, v, game_id, patched, romfs, msl_ios, gfx, capture=False):
         first_line = (c1.read_text(encoding='utf-8').splitlines()[:1] or [''])[0] if c1.exists() else ''
         if not re.match(rf'^# chain b-{re.escape(v)} inputs {re.escape(inputs)}( |$)', first_line):
             die(f'{c1} is missing or not made from these libraries (chain {v}, inputs {inputs})')
+    if gfx == 'nvn' and (gd / 'gl_capture.tsv').is_file() and (gd / 'gl_capture.tsv').stat().st_size > 0:
+        if not ((msl_ios / 'gl/gl_shaders.metallib').is_file() and (msl_ios / 'gl/gl_shaders.tsv').is_file()):
+            die(f'no supplemental GL shader library and table at {msl_ios}/gl')
     return prof, mods, gfx, msldir
 
 
@@ -374,10 +377,8 @@ def copy_program_tables(game_id, prof, patched, vnacp, gfx, td, env, capture=Fal
     if gfx == 'nvn':
         if (gd / 'cb_extent.tsv').exists(): shutil.copy2(gd / 'cb_extent.tsv', td)
         else: t(f'no {gd}/cb_extent.tsv: the host copies whole uniform bindings')
-        for f in ('shader_pairs.tsv', 'pso_pairs.tsv', 'mesh_pairs.tsv'):
+        for f in ('shader_pairs.tsv', 'pso_pairs.tsv'):
             if (gd / f).exists(): shutil.copy2(gd / f, td)
-        if not (td / 'mesh_pairs.tsv').exists() and env.get('DM_MESH_PAIRS') and Path(env['DM_MESH_PAIRS']).is_file():
-            shutil.copy2(env['DM_MESH_PAIRS'], td / 'mesh_pairs.tsv')
     if (gd / 'pso_manifest.tsv').exists(): shutil.copy2(gd / 'pso_manifest.tsv', td)
     else: t('no pso_manifest.tsv: no bundled prewarm seed list')
     t('launcher: ' + py(DM / 'games/settings.py', game_id, patched, vnacp, td / 'launcher.json', env=dict(env, GFXAPI=gfx)))
@@ -509,14 +510,10 @@ def main():
     if gfx0 == 'nvn' and not capture and gpus and gpus != 'none' and (prof0.dir / 'shader_pairs.tsv').exists():
         pso = w / 'build/ios/pso/bundle'
         t(f'pipeline archive for {gpus} (metal-tt; minutes when its inputs changed)')
-        mp_args = []
-        if not (prof0.dir / 'mesh_pairs.tsv').exists() and env.get('DM_MESH_PAIRS') and Path(env['DM_MESH_PAIRS']).is_file():
-            mp_args = ['--pairs', str(prof0.dir / 'shader_pairs.tsv'), '--pairs', str(prof0.dir / 'pso_pairs.tsv'), '--pairs', env['DM_MESH_PAIRS']]
         r = subprocess.run(
             [sys.executable, str(DM / 'gfx/tools/pso_offline.py'), '--game', game, '--msl', str(msl_ios0 / msldir0),
              '--out', str(pso), '--work', str(w / 'build/ios/pso/work'), '--gpu', gpus]
-            + (['--os-min', env['DM_PSO_IOS_MIN']] if env.get('DM_PSO_IOS_MIN') else [])
-            + mp_args,
+            + (['--os-min', env['DM_PSO_IOS_MIN']] if env.get('DM_PSO_IOS_MIN') else []),
             env=shim_env()
         )
         if r.returncode:
@@ -591,10 +588,12 @@ def main():
             die('DM_COPY_ROMFS=NO: a game of several programs keeps its programs\' files in the app')
         maps.append(f'{P}={app}')
         if has_aoc: maps.append(f'{P}/aoc={aoc}')
-        for pn, _, _, _, _, p_romfs, p_msl, _, p_msldir in programs:
+        for pn, _, p_prof, _, _, p_romfs, p_msl, p_gfx, p_msldir in programs:
             skip.append(f'{P}/p{pn}')
             maps.append(f'{P}/p{pn}/romfs.img={p_romfs}' if rfs.is_image(p_romfs) else f'{P}/p{pn}/romfs={p_romfs}')
             maps.append(f'{P}/msl/p{pn}/{p_msldir}={p_msl / p_msldir}')
+            if not capture and p_gfx == 'nvn' and (p_prof.dir / 'gl_capture.tsv').is_file() and (p_prof.dir / 'gl_capture.tsv').stat().st_size > 0:
+                maps.append(f'{P}/msl/p{pn}/gl={p_msl / "gl"}')
             for extra in ('html', 'jit', 'romfs_programs'):
                 d = p_romfs.parent / extra
                 if d.is_dir(): maps.append(f'{P}/p{pn}/{extra}={d}')
@@ -616,6 +615,8 @@ def main():
         if pso: maps.append(f'{P}/pso={pso}')
         maps.append(f'{P}/msl/{msldir0}={msl_ios0 / msldir0}')
         maps.append(f'{P}={app}')
+        if not capture and gfx0 == 'nvn' and (prof0.dir / 'gl_capture.tsv').is_file() and (prof0.dir / 'gl_capture.tsv').stat().st_size > 0:
+            maps.append(f'{P}/msl/gl={msl_ios0 / "gl"}')
         for extra in ('html', 'jit', 'romfs_programs'):
             d = romfs0.parent / extra
             if d.is_dir(): maps.append(f'{P}/{extra}={d}')
